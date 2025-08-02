@@ -2,10 +2,13 @@
     "idf.pythonInstallPath": "D:\\ESP32\\esp_new\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
     "idf.espIdfPathWin": "D:/ESP32/esp_new/Espressif/frameworks/esp-idf-v5.4.1/",
     "idf.toolsPathWin": "D:\\ESP32\\esp_new\\Espressif",
-    "idf.portWin": "COM5",
+    "idf.portWin": "COM7",
     "idf.flashType": "UART",
     "idf.currentSetup": "Z:/ESP32/Espressif/frameworks/esp-idf-v5.3.1/",
     "files.associations": {
-        "led_strip.h": "c"
+        "led_strip.h": "c",
+        "ws2812_ctrl.h": "c",
+        "spi_lcd.h": "c",
+        "spi_config.h": "c"
     }
 }

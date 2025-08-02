@@ -128,7 +128,7 @@ void ws2812_blink_led(void* arg)
         }
         ESP_ERROR_CHECK(led_strip_refresh(led_strip));
         hue = (hue + 1) % 360;
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
