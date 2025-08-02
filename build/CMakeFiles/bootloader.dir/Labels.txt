@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+Z:/ESP32/easyio_test/build/CMakeFiles/bootloader
+Z:/ESP32/easyio_test/build/CMakeFiles/bootloader.rule
+Z:/ESP32/easyio_test/build/CMakeFiles/bootloader-complete.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+Z:/ESP32/easyio_test/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
