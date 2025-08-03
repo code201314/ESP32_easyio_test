@@ -3,7 +3,7 @@ menu "Example Configuration"
     orsource "$IDF_PATH/examples/common_components/env_caps/$IDF_TARGET/Kconfig.env_caps"
 
     choice BLINK_LED
-        prompt "Blink LED type"
+        prompt "Blink LE D type"
         default BLINK_LED_GPIO
         help
             Select the LED type. A normal level controlled LED or an addressable LED strip.
@@ -45,5 +45,23 @@ menu "Example Configuration"
         default 1000
         help
             Define the blinking period in milliseconds.
+
+    config ESP_WIFI_SSID
+        string "Wi-Fi SSID"
+        default "your-ssid"
+        help
+            Wi-Fi SSID to connect to. If you want to use the example without Wi-Fi, leave this empty.
+
+    config ESP_WIFI_PASSWORD
+        string "Wi-Fi Password"
+        default "your-password"
+        help
+            Wi-Fi password to connect to. If you want to use the example without Wi-Fi, leave this empty.
+
+    config ESP_MAXIMUM_RETRY
+        int "Maximum Wi-Fi connection retries"
+        default 5
+        help
+            The maximum number of times to retry connecting to the Wi-Fi network.
 
 endmenu

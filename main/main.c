@@ -2,7 +2,7 @@
  * @Author: code201314 1162782792@qq.com
  * @Date: 2025-06-08 12:12:45
  * @LastEditors: code201314 1162782792@qq.com
- * @LastEditTime: 2025-08-01 00:00:33
+ * @LastEditTime: 2025-08-03 22:47:15
  * @FilePath: \easyio_test\main\main.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -15,67 +15,168 @@
 #include "ws2812_ctrl.h"
 #include "spi_config.h"
 #include "spi_lcd.h"
+#include "led.h"
 
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "freertos/event_groups.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "lwip/err.h"
+#include "lwip/sys.h"
 
-static const char *TAG = "main";
+#define LED 33
+#define KEY 0
 
-// spi_lcd_task 任务。初始化 SPI3-LCD，并显示图形。
-void spi_lcd_task(void* arg)
+// static const char *TAG = "main";
+
+// 任务句柄，包含创建任务的所有状态，对任务的操作都通过操作任务句柄实现
+TaskHandle_t led_task_Handler = NULL;
+
+// led_task 任务，控制LED闪烁
+void led_task(void* arg)
 {
-    // 配置SPI3-主机模式，配置DMA通道、DMA字节大小，及 MISO、MOSI、CLK的引脚。
-    spi_master_init(SPI3_HOST, LCD_DEF_DMA_CHAN, LCD_DMA_MAX_SIZE, SPI3_DEF_PIN_NUM_MISO, SPI3_DEF_PIN_NUM_MOSI, SPI3_DEF_PIN_NUM_CLK);
-    // lcd-驱动IC初始化（注意：普通GPIO最大只能30MHz，而IOMUX默认的SPI引脚，CLK最大可以设置到80MHz）（注意排线不要太长，高速时可能会花屏）
-    spi_lcd_init(SPI3_HOST, 80*1000*1000, LCD_SPI3_DEF_PIN_NUM_CS0);
-
-    // 清屏，用单一底色
-    //LCD_Clear(WHITE);
-    //LCD_Clear(LIGHTGRAY);
-    LCD_Clear(LGRAYBLUE);
-    // 画线
-	//LCD_DrawLine(0, 0, 240-1, 240-1, RED);
-    LCD_DrawLine(0, 0, 135-1, 135-1, RED);
-    // 画点
-    LCD_DrawPoint(8-1,16-1,RED);
-
-    // 画空心矩形
-    LCD_DrawRectangle(30-1, 2-1, 50-1, 20-1, BLUE);
-    // 画实心矩形
-    LCD_DrawFillRectangle(35-1, 8-1, 36-1, 8-1, BLUE);
-    LCD_DrawFillRectangle(35-1, 11-1, 36-1, 12-1, BLUE);
-    LCD_DrawFillRectangle(40-1, 10-1, 45-1, 15-1, BLUE);
-    LCD_DrawFillRectangle(60-1, 2-1, 75-1, 20-1, BLUE);
-    // 画空心圆
-    LCD_DrawCircle(60-1, 40-1, 8, RED);
-    LCD_DrawCircle(60-1, 40-1, 15, RED);
-    LCD_DrawCircle(140-1, 40-1, 20, BLACK);
-    LCD_DrawCircle(140-1, 40-1, 2, RED);
-    // 画角度线
-    LCD_DrawAngleLine(140-1, 40-1, 150, 10, RED);
-    LCD_DrawAngleLine(140-1, 40-1, -150, 16, RED);
-
-    // 显示单个字符
-    LCD_ShowChar(80-1,0,YELLOW,BLUE,'~',12,0);
-    // 显示字符串
-    LCD_ShowString(80-1,20-1,YELLOW,BLUE,"Hello!",12,0);
-    LCD_ShowString(80-1,40-1,YELLOW,BLUE,"Hello!",12,1);
-    // 显示数字
-    LCD_ShowNum(80-1,60-1,YELLOW,BLUE,123456,6,12,0);
-    LCD_ShowNum(80-1,80-1,YELLOW,BLUE,789,6,16,1);
-    LCD_ShowFloat(80-1,100-1,YELLOW,BLUE,3.14159,7,12,1);
-    // 显示40*40 QQ图片
-    // LCD_ShowPicture_16b(0, 40-1, 40, 40, gImage_qq);
-
+    // 配置LED为推挽输出，设置初始电平为0
+    led_init(LED, 0);
     while(1) {
-		vTaskDelay(100 / portTICK_PERIOD_MS);
-        // LCD_Clear(LGRAYBLUE);
-        // LCD_DrawLine(0, 0, 135-1, 135-1, RED);
-        // ESP_LOGI(TAG, "LCD_DrawRectangle");
+        // LED状态闪烁
+        led_blink(LED);
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
 
+
+/* The examples use WiFi configuration that you can set via project configuration menu
+
+   If you'd rather not, just change the below entries to strings with
+   the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
+*/
+#define EXAMPLE_ESP_WIFI_SSID      CONFIG_ESP_WIFI_SSID
+#define EXAMPLE_ESP_WIFI_PASS      CONFIG_ESP_WIFI_PASSWORD
+#define EXAMPLE_ESP_MAXIMUM_RETRY  CONFIG_ESP_MAXIMUM_RETRY
+
+/* FreeRTOS event group to signal when we are connected*/
+static EventGroupHandle_t s_wifi_event_group;
+
+/* The event group allows multiple bits for each event, but we only care about two events:
+ * - we are connected to the AP with an IP
+ * - we failed to connect after the maximum amount of retries */
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static const char *TAG = "wifi station";
+
+static int s_retry_num = 0;
+
+static void event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+            esp_wifi_connect();
+            s_retry_num++;
+            ESP_LOGI(TAG, "retry to connect to the AP");
+        } else {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+        ESP_LOGI(TAG,"connect to the AP fail");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
+void wifi_init_sta(void)
+{
+    s_wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg)); 
+
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &event_handler,
+                                                        NULL,
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &event_handler,
+                                                        NULL,
+                                                        &instance_got_ip));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = EXAMPLE_ESP_WIFI_SSID,
+            .password = EXAMPLE_ESP_WIFI_PASS,
+            /* Setting a password implies station will connect to all security modes including WEP/WPA.
+             * However these modes are deprecated and not advisable to be used. Incase your Access point
+             * doesn't support WPA2, these mode can be enabled by commenting below line */
+	     .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+
+            .pmf_cfg = {
+                .capable = true,
+                .required = false
+            },
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
+     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            portMAX_DELAY);
+
+    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
+     * happened. */
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
+                 EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+    } else {
+        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+    }
+
+    /* The event will not be processed after unregister */
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id));
+    vEventGroupDelete(s_wifi_event_group);
+}
+
+
 void app_main(void)
 {
+    xTaskCreate(led_task, "led_task", 2048, NULL, 3, &led_task_Handler);
     // xTaskCreate(ws2812_blink_led, "argb_strip_task", 2048, NULL, 3, NULL);
     // 创建 spi_lcd_task 任务。
-    xTaskCreate(spi_lcd_task, "spi_lcd_task", 2048, NULL, 5, NULL);
+    // xTaskCreate(spi_lcd_task, "spi_lcd_task", 2048, NULL, 5, NULL);
+    //Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    wifi_init_sta();
 }

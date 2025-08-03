@@ -5,6 +5,7 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "freertos/task.h"
+#include "spi_config.h"
 #include "simple_gui.h"
 
 /**
@@ -543,6 +544,6 @@ void lcd_data16(spi_device_handle_t spi, uint16_t data);
  *     - none
  */
 void spi_lcd_init(spi_host_device_t host_id, uint32_t clk_speed, gpio_num_t cs_io_num);
-
+void spi_lcd_task(void* arg);
 
 #endif

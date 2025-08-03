@@ -1,4 +1,4 @@
-idf_component_register(SRCS 
+idf_component_register(SRCS "led.c"
                             "ws2812_ctrl.c"
                             "spi_config.c"
                             "spi_lcd.c"
